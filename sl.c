@@ -106,38 +106,42 @@ void debugp(int program)
 }
 
 int btns = 0;
-void select_button(int index)
+void select_button(int _index)
 {
-    for(int i=0; i<nfiles; ++i)
+    if(_index < 40)
     {
-        DWORD out_msg = 0x9 << 4 | i << 8 | 72 << 16;
+        for(int i=0; i<nfiles; ++i)
+        {
+            DWORD out_msg = 0x9 << 4 | i << 8 | 72 << 16;
+            midiOutShortMsg(hMidiOut, out_msg);
+        }
+        
+        override_index = _index;
+        
+        DWORD out_msg = 0x9 << 4 | _index << 8 | 13 << 16;
         midiOutShortMsg(hMidiOut, out_msg);
     }
-    
-    if(index < 40)
+    else 
     {
-        override_index = index;
-    }
-    else dt_interval = (index - 0x52) % 5;
+        dt_interval = (_index - 0x52) % 5;
     
-    DWORD out_msg = 0x9 << 4 | index << 8 | 13 << 16;
-    midiOutShortMsg(hMidiOut, out_msg);
-    
-    for(int i=dt_interval; i<5; ++i)
-    {
-        DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 67 << 16;
-        midiOutShortMsg(hMidiOut, out_msg);
-    }
-    for(int i=0; i<=dt_interval; ++i)
-    {
-        DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 95 << 16;
-        midiOutShortMsg(hMidiOut, out_msg);
+        for(int i=dt_interval; i<5; ++i)
+        {
+            DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 67 << 16;
+            midiOutShortMsg(hMidiOut, out_msg);
+        }
+        for(int i=0; i<=dt_interval; ++i)
+        {
+            DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 95 << 16;
+            midiOutShortMsg(hMidiOut, out_msg);
+        }
     }
 }
 
 #define NOTE_OFF 0x8
 #define NOTE_ON 0x9
 #define CONTROL_CHANGE 0xB
+#define TIME_DIAL 0x2F
 void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, DWORD dwParam1, DWORD dwParam2)
 {
     if(wMsg == MIM_DATA)
@@ -221,59 +225,38 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
         }
         else if(b4hi == CONTROL_CHANGE)// Channel select
         {
-//             if(button == TIME_DIAL)
-//             {
-//                 waveOutReset(hWaveOut);
-//                 time_dial = (double)b2/(double)0x7F;
-//                 
-//                 int delta = (.9*time_dial+.09*time_fine_dial+.01*time_very_fine_dial) * t_end * (double)sample_rate;
-//                 header.lpData = min(max(smusic1, smusic1+delta), smusic1+music1_size);
-//                 header.dwBufferLength = 4 * (music1_size-delta);
-//                 waveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-//                 waveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-//                 waveOutPause(hWaveOut);
-//                 paused = 1;
-//             }
-//             else if(button == TIME_FINE_DIAL)
-//             {
-//                 waveOutReset(hWaveOut);
-//                 time_fine_dial = (double)b2/(double)0x7F;
-//                 
-//                 int delta = (.9*time_dial+.09*time_fine_dial+.01*time_very_fine_dial) * t_end * (double)sample_rate;
-//                 header.lpData = min(max(smusic1, smusic1+delta), smusic1+music1_size);
-//                 header.dwBufferLength = 4 * (music1_size-delta);
-//                 waveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-//                 waveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-//                 waveOutPause(hWaveOut);
-//                 paused = 1;
-//             }
-//             else if(button == TIME_VERYFINE_DIAL)
-//             {
-//                 waveOutReset(hWaveOut);
-//                 time_very_fine_dial = (double)b2/(double)0x7F;
-//                 
-//                 int delta = (.9*time_dial+.09*time_fine_dial+.01*time_very_fine_dial) * t_end * (double)sample_rate;
-//                 header.lpData = min(max(smusic1, smusic1+delta), smusic1+music1_size);
-//                 header.dwBufferLength = 4 * (music1_size-delta);
-//                 waveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-//                 waveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-//                 waveOutPause(hWaveOut);
-//                 paused = 1;
-//             }
-//             else
-//             {
+            if(button == TIME_DIAL)
+            {
+                
+                if(b2 < 0x3A)
+                {
+                    if(dt_interval == 0)t_now += 1.e-3;
+                    else if(dt_interval == 1)t_now += 1.e-2;
+                    else if(dt_interval == 2)t_now += 1.e-1;
+                    else if(dt_interval == 3)t_now += 1.;
+                    else if(dt_interval == 3)t_now += 1.e1;
+                }
+                else
+                {
+                    if(dt_interval == 0)t_now -= 1.e-3;
+                    else if(dt_interval == 1)t_now -= 1.e-2;
+                    else if(dt_interval == 2)t_now -= 1.e-1;
+                    else if(dt_interval == 3)t_now -= 1.;
+                    else if(dt_interval == 3)t_now -= 1.e1;
+                }
+            }
+            else
+            {
                 if(button == 0x07)
                 {
                     fader_values[channel] = (double)b2/(double)0x7F;
-//                     glUniform1f(
                 }
-//             }
+            }
         }
         printf("wMsg=MIM_DATA, dwParam1=%08x, byte=%02x %02x h_%01x l_%01x %02x, dwParam2=%08x\n", dwParam1, b1, b2, b3hi, b3lo, b4, dwParam2);
     }
     
     index = override_index % nfiles;
-    printf("fader0: %le\n", fader_values[0]);
     
     UpdateWindow(hwnd);
 }
@@ -511,6 +494,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         
         glUseProgram(programs[index]);
         glUniform2f(resolution_locations[index], 1920, 1080);
+        glUniform1f(time_locations[index], t_now);
         glUniform1f(fader0_locations[index], fader_values[0]);
         glUniform1f(fader1_locations[index], fader_values[1]);
         glUniform1f(fader2_locations[index], fader_values[2]);
