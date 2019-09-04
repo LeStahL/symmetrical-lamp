@@ -41,9 +41,10 @@ int override_index = 0,
     *fader6_locations,
     *fader7_locations,
     *fader8_locations, 
-    index = 0;
+    index = 0,
+    dt_interval = 0;
 
-double t_now,
+double t_now = 0.,
     fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
 
 PFNGLCREATESHADERPROC glCreateShader;
@@ -107,15 +108,9 @@ void debugp(int program)
 int btns = 0;
 void select_button(int index)
 {
-    for(int i=0; i<40; ++i)
-    {
-        DWORD out_msg = 0x8 << 4 | i << 8 | 0 << 16;
-        midiOutShortMsg(hMidiOut, out_msg);
-    }
-
     for(int i=0; i<nfiles; ++i)
     {
-        DWORD out_msg = 0x9 << 4 | i << 8 | 60 << 16;
+        DWORD out_msg = 0x9 << 4 | i << 8 | 72 << 16;
         midiOutShortMsg(hMidiOut, out_msg);
     }
     
@@ -123,9 +118,21 @@ void select_button(int index)
     {
         override_index = index;
     }
+    else dt_interval = (index - 0x52) % 5;
     
     DWORD out_msg = 0x9 << 4 | index << 8 | 13 << 16;
     midiOutShortMsg(hMidiOut, out_msg);
+    
+    for(int i=dt_interval; i<5; ++i)
+    {
+        DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 67 << 16;
+        midiOutShortMsg(hMidiOut, out_msg);
+    }
+    for(int i=0; i<=dt_interval; ++i)
+    {
+        DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 95 << 16;
+        midiOutShortMsg(hMidiOut, out_msg);
+    }
 }
 
 #define NOTE_OFF 0x8
@@ -147,9 +154,7 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
         BYTE channel = b4lo,
             button = b3;
         
-        if(b4hi == NOTE_ON)
-            select_button(button);
-        else if(b4hi == NOTE_OFF)
+        if(b4hi == NOTE_OFF)
         {
             select_button(button);
             
@@ -208,6 +213,10 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
                     midiOutShortMsg(hMidiOut, out_msg);
                 }
                 btns = 1+(btns+1)%125;
+            }
+            else if(button >= 0x52 && button <= 0x56)
+            {
+                printf("dt_interval: %d\n", dt_interval);
             }
         }
         else if(b4hi == CONTROL_CHANGE)// Channel select
