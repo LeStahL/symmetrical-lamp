@@ -21,6 +21,7 @@
 #include <time.h>
 
 #include "Windows.h"
+#include "windowsx.h"
 #include "GL/GL.h"
 #include "glext.h"
 
@@ -43,12 +44,16 @@ nfiles,
 *fader5_locations = 0,
 *fader6_locations = 0,
 *fader7_locations = 0,
-*fader8_locations = 0, 
+*fader8_locations = 0,
+*shader_compiled = 0,
+*program_linked = 0,
 index = 0,
 dt_interval = 0,
 dirty = 0,
 shot = 0;
 char **shader_sources = 0;
+GLchar **compile_logs = 0,
+**link_logs = 0;
 
 double t_now = 0.,
 fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
@@ -81,47 +86,54 @@ TCHAR lpDrive[4];
 TCHAR lpFile[_MAX_FNAME];
 TCHAR lpExt[_MAX_EXT];
 
-void debug(int shader_handle)
+#define ACREA(id, type) \
+    if(id == 0) { id = (type*)malloc(nfiles*sizeof(type));}\
+    else {id = (type*)realloc(id, nfiles*sizeof(type));}
+#define ACREAL(id, type, len) \
+    if(id == 0) { id = (type*)malloc(len*sizeof(type));}\
+    else {id = (type*)realloc(id, len*sizeof(type));}
+    
+int debug(int shader_handle, int i)
 {
-    printf("    Debugging shader with handle %d.\n", shader_handle);
+//     printf("    Debugging shader with handle %d.\n", shader_handle);
     int compile_status = 0;
     glGetShaderiv(shader_handle, GL_COMPILE_STATUS, &compile_status);
     if(compile_status != GL_TRUE)
     {
-        printf("    FAILED.\n");
+//         printf("    FAILED.\n");
         GLint len;
         glGetShaderiv(shader_handle, GL_INFO_LOG_LENGTH, &len);
-        printf("    Log length: %d\n", len);
-        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
-        glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
-        printf("    Error messages:\n%s\n", CompileLog);
-        free(CompileLog);
+//         printf("    Log length: %d\n", len);
+        ACREAL(compile_logs[i], GLchar, len);
+        glGetShaderInfoLog(shader_handle, len, NULL, compile_logs[i]);
+//         printf("    Error messages:\n%s\n", compile_logs[i]);
+        return 0;
     }
     else
-        printf("    Shader compilation successful.\n");
+//         printf("    Shader compilation successful.\n");
+        return 1;
 }
 
-void debugp(int program)
+int debugp(int program, int i)
 {
-    printf("    Debugging program with handle %d.\n", program);
+//     printf("    Debugging program with handle %d.\n", program);
     int compile_status = 0;
     glGetProgramiv(program, GL_LINK_STATUS, &compile_status);
     if(compile_status != GL_TRUE)
     {
-        printf("    FAILED.\n");
+//         printf("    FAILED.\n");
         GLint len;
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
-        printf("    Log length: %d\n", len);
-        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
-        glGetProgramInfoLog(program, len, NULL, CompileLog);
-        printf("    Error messages:\n%s\n", CompileLog);
-        free(CompileLog);
+//         printf("    Log length: %d\n", len);
+        ACREAL(link_logs[i], GLchar, len);
+        glGetProgramInfoLog(program, len, NULL, link_logs[i]);
+//         printf("    Error messages:\n%s\n", link_logs[i]);
+        return 0;
     }
     else
-        printf("    Program linking successful.\n");
+//         printf("    Program linking successful.\n");
+        return 1;
 }
-
-
 
 int screenshot(char *fileName)
 {    
@@ -178,10 +190,6 @@ int screenshot(char *fileName)
     return 1;
 }
 
-#define ACREA(id, type) \
-    if(id == 0) { id = (type*)malloc(nfiles*sizeof(type));}\
-    else {id = (type*)realloc(id, nfiles*sizeof(type));}
-
 void ReloadShaders()
 {
     // Remove old shaders
@@ -226,6 +234,10 @@ void ReloadShaders()
     ACREA(fader7_locations, int);
     ACREA(fader8_locations, int);
     ACREA(shader_sources, char*);
+    ACREA(shader_compiled, int);
+    ACREA(program_linked, int);
+    ACREA(compile_logs, GLchar*);
+    ACREA(link_logs, GLchar*);
     
     for(int i=0; i<nfiles; ++i)
     {
@@ -239,16 +251,16 @@ void ReloadShaders()
         shader_sources[i] = (char*)malloc(filesize+2);
         fread(shader_sources[i], 1, filesize, f);
         fclose(f);
-        printf("%s\n\n==============\n", shader_sources[i]);
+//         printf("%s\n\n==============\n", shader_sources[i]);
         
         handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
         programs[i] = glCreateProgram();
         glShaderSource(handles[i], 1, (GLchar **)&shader_sources[i], &filesize);
         glCompileShader(handles[i]);
-        debug(handles[i]);
+        shader_compiled[i] = debug(handles[i], i);
         glAttachShader(programs[i], handles[i]);
         glLinkProgram(programs[i]);
-        debugp(programs[i]);
+        program_linked[i] = debugp(programs[i], i);
         
         glDetachShader(programs[i], handles[i]);
         
@@ -675,14 +687,14 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     }
     
     select_button(0);
+    glListBase(1000); 
     
     watch_directory(".\\shaders");
-    watch_directory_thread = CreateThread(NULL, // security attributes ( default if NULL )
-                            0, // stack SIZE default if 0
-                            directory_watch_thread, // Start Address
-                            NULL, // input data
-                            0, // creational flag ( start if  0 )
-                            &watch_directory_thread_id); // thread ID
+    watch_directory_thread = CreateThread(NULL, 0, directory_watch_thread, NULL, 0, &watch_directory_thread_id);
+    
+    SelectObject (hdc, GetStockObject (SYSTEM_FONT)); 
+    
+    wglUseFontBitmaps(hdc, 0, 256, 1000);
     
     while(1)
     {
@@ -721,19 +733,38 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         glVertex3f(1,-1,0);
         glEnd();
         
-        SwapBuffers(hdc);
-        
         if(dirty) 
         {
             ReloadShaders();
             dirty = 0;
         }
+
+        if(!shader_compiled[index])
+        {
+            glClearColor(1.,0.,0.,1.);
+            glClear(GL_COLOR_BUFFER_BIT);
+        
+            printf("Failed to compile shader %d with message:\n%s\n", index, compile_logs[index]);
+            glRasterPos2f(30.0F, 300.0F); 
+            glCallLists(strlen(compile_logs[index]), GL_UNSIGNED_BYTE, compile_logs[index]); 
+        }
+        else if(!program_linked[index])
+        {
+            glClearColor(1.,1.,0.,1.);
+            glClear(GL_COLOR_BUFFER_BIT);
+            printf("Failed to link program %d with message:\n%s\n", index, link_logs[index]);
+            glRasterPos2f(30.0F, 300.0F); 
+            glCallLists(strlen(link_logs[index]), GL_UNSIGNED_BYTE, link_logs[index]); 
+        }
+        glFlush();
         
         if(shot)
         {
              screenshot(NULL);
              shot = 0;
         }
+        
+        SwapBuffers(hdc);
     }
     
     return 0;
