@@ -303,6 +303,11 @@ void select_button(int _index)
             DWORD out_msg = 0x9 << 4 | i << 8 | 72 << 16;
             midiOutShortMsg(hMidiOut, out_msg);
         }
+        for(int i=nfiles; i<40; ++i)
+        {
+           DWORD out_msg = 0x8 << 4 | i << 8 | 0 << 16;
+            midiOutShortMsg(hMidiOut, out_msg);
+        }
         
         override_index = _index;
         
