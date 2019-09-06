@@ -646,7 +646,11 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         
         SwapBuffers(hdc);
         
-        if(dirty) ReloadShaders();
+        if(dirty) 
+        {
+            ReloadShaders();
+            dirty = 0;
+        }
     }
     
     return 0;
