@@ -42,7 +42,9 @@ nfiles,
 *fader7_locations = 0,
 *fader8_locations = 0, 
 index = 0,
-dt_interval = 0;
+dt_interval = 0,
+dirty = 0;
+char **shader_sources = 0;
 
 double t_now = 0.,
 fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
@@ -64,6 +66,9 @@ PFNGLGETSHADERIVPROC glGetShaderiv;
 PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog;
 PFNGLGETPROGRAMIVPROC glGetProgramiv;
 PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog;
+PFNGLDELETESHADERPROC glDeleteShader;
+PFNGLDELETEPROGRAMPROC glDeleteProgram;
+PFNGLDETACHSHADERPROC glDetachShader;
 
 DWORD dwWaitStatus, watch_directory_thread_id; 
 HANDLE dwChangeHandles[2],
@@ -71,6 +76,139 @@ HANDLE dwChangeHandles[2],
 TCHAR lpDrive[4];
 TCHAR lpFile[_MAX_FNAME];
 TCHAR lpExt[_MAX_EXT];
+
+void debug(int shader_handle)
+{
+    printf("    Debugging shader with handle %d.\n", shader_handle);
+    int compile_status = 0;
+    glGetShaderiv(shader_handle, GL_COMPILE_STATUS, &compile_status);
+    if(compile_status != GL_TRUE)
+    {
+        printf("    FAILED.\n");
+        GLint len;
+        glGetShaderiv(shader_handle, GL_INFO_LOG_LENGTH, &len);
+        printf("    Log length: %d\n", len);
+        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
+        glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
+        printf("    Error messages:\n%s\n", CompileLog);
+        free(CompileLog);
+    }
+    else
+        printf("    Shader compilation successful.\n");
+}
+
+void debugp(int program)
+{
+    printf("    Debugging program with handle %d.\n", program);
+    int compile_status = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &compile_status);
+    if(compile_status != GL_TRUE)
+    {
+        printf("    FAILED.\n");
+        GLint len;
+        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+        printf("    Log length: %d\n", len);
+        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
+        glGetProgramInfoLog(program, len, NULL, CompileLog);
+        printf("    Error messages:\n%s\n", CompileLog);
+        free(CompileLog);
+    }
+    else
+        printf("    Program linking successful.\n");
+}
+
+#define ACREA(id, type) \
+    if(id == 0) { id = (type*)malloc(nfiles*sizeof(type));}\
+    else {id = (type*)realloc(id, nfiles*sizeof(type));}
+
+void ReloadShaders()
+{
+    // Remove old shaders
+    for(int i=0; i<nfiles; ++i)
+    {
+        glDeleteShader(handles[i]);
+        glDeleteProgram(programs[i]);
+        free(shader_sources[i]);
+    }
+    
+    // Browse shaders folder for shaders
+    WIN32_FIND_DATA data;
+    HANDLE hfile = FindFirstFile(".\\shaders\\*.frag", &data);
+    char **filenames = (char **)malloc(sizeof(char*));
+    filenames[0] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
+    sprintf(filenames[0], ".\\shaders\\%s", data.cFileName);
+    printf("Found %s\n", filenames[0]);
+    nfiles = 1;
+    while(FindNextFile(hfile, &data))
+    {
+        ++nfiles;
+        filenames = (char**)realloc(filenames, nfiles*sizeof(char*));
+        filenames[nfiles-1] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
+        sprintf(filenames[nfiles-1], ".\\shaders\\%s", data.cFileName);
+        printf("Found %s\n", filenames[nfiles-1]);
+    } 
+    FindClose(hfile);
+    printf("Read %d files.\n", nfiles);
+    
+    // Load shaders
+    ACREA(handles, int);
+    ACREA(programs, int);
+    ACREA(time_locations, int);
+    ACREA(resolution_locations, int);
+    ACREA(fader0_locations, int);
+    ACREA(fader1_locations, int);
+    ACREA(fader2_locations, int);
+    ACREA(fader3_locations, int);
+    ACREA(fader4_locations, int);
+    ACREA(fader5_locations, int);
+    ACREA(fader6_locations, int);
+    ACREA(fader7_locations, int);
+    ACREA(fader8_locations, int);
+    ACREA(shader_sources, char*);
+    
+    for(int i=0; i<nfiles; ++i)
+    {
+        printf("Loading Shader %d from %s\n", i, filenames[i]);
+        
+        FILE *f = fopen(filenames[i], "rt");
+        if(f == 0)printf("Failed to open file: %s\n", filenames[i]);
+        fseek(f, 0, SEEK_END);
+        int filesize = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        shader_sources[i] = (char*)malloc(filesize+2);
+        fread(shader_sources[i], 1, filesize, f);
+        fclose(f);
+        printf("%s\n\n==============\n", shader_sources[i]);
+        
+        handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
+        programs[i] = glCreateProgram();
+        glShaderSource(handles[i], 1, (GLchar **)&shader_sources[i], &filesize);
+        glCompileShader(handles[i]);
+        debug(handles[i]);
+        glAttachShader(programs[i], handles[i]);
+        glLinkProgram(programs[i]);
+        debugp(programs[i]);
+        
+        glDetachShader(programs[i], handles[i]);
+        
+        glUseProgram(programs[i]);
+        time_locations[i] = glGetUniformLocation(programs[i], "iTime");
+        resolution_locations[i] = glGetUniformLocation(programs[i], "iResolution");
+        fader0_locations[i] = glGetUniformLocation(programs[i], "iFader0");
+        fader1_locations[i] = glGetUniformLocation(programs[i], "iFader1");
+        fader2_locations[i] = glGetUniformLocation(programs[i], "iFader2");
+        fader3_locations[i] = glGetUniformLocation(programs[i], "iFader3");
+        fader4_locations[i] = glGetUniformLocation(programs[i], "iFader4");
+        fader5_locations[i] = glGetUniformLocation(programs[i], "iFader5");
+        fader6_locations[i] = glGetUniformLocation(programs[i], "iFader6");
+        fader7_locations[i] = glGetUniformLocation(programs[i], "iFader7");
+        fader8_locations[i] = glGetUniformLocation(programs[i], "iFader8");
+        
+    }
+    
+    for(int i=0; i<nfiles; ++i) free(filenames[i]);
+    free(filenames);
+}
 
 void watch_directory(const char *lpDir)
 {
@@ -120,10 +258,9 @@ void __stdcall  directory_watch_thread()
         switch (dwWaitStatus) 
         { 
             case WAIT_OBJECT_0: 
-                
-                // A file was created, renamed, or deleted in the directory.
-                // Refresh this directory and restart the notification.
                 printf("File created/renamed/deleted\n");
+                
+                dirty = 1;
                 
                 if ( FindNextChangeNotification(dwChangeHandles[0]) == FALSE )
                 {
@@ -133,10 +270,9 @@ void __stdcall  directory_watch_thread()
                 break; 
                 
             case WAIT_OBJECT_0 + 1: 
-                
-                // A directory was created, renamed, or deleted.
-                // Refresh the tree and restart the notification.
                 printf("File was touched.\n");
+                
+                dirty = 1;
                 
                 if (FindNextChangeNotification(dwChangeHandles[1]) == FALSE )
                 {
@@ -146,12 +282,6 @@ void __stdcall  directory_watch_thread()
                 break; 
                 
             case WAIT_TIMEOUT:
-                
-                // A timeout occurred, this would happen if some value other 
-                // than INFINITE is used in the Wait call and no changes occur.
-                // In a single-threaded environment you might not want an
-                // INFINITE wait.
-                
                 printf("\nNo changes in the timeout period.\n");
                 break;
                 
@@ -161,46 +291,6 @@ void __stdcall  directory_watch_thread()
                 break;
         }
     }
-}
-
-void debug(int shader_handle)
-{
-    printf("    Debugging shader with handle %d.\n", shader_handle);
-    int compile_status = 0;
-    glGetShaderiv(shader_handle, GL_COMPILE_STATUS, &compile_status);
-    if(compile_status != GL_TRUE)
-    {
-        printf("    FAILED.\n");
-        GLint len;
-        glGetShaderiv(shader_handle, GL_INFO_LOG_LENGTH, &len);
-        printf("    Log length: %d\n", len);
-        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
-        glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
-        printf("    Error messages:\n%s\n", CompileLog);
-        free(CompileLog);
-    }
-    else
-        printf("    Shader compilation successful.\n");
-}
-
-void debugp(int program)
-{
-    printf("    Debugging program with handle %d.\n", program);
-    int compile_status = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &compile_status);
-    if(compile_status != GL_TRUE)
-    {
-        printf("    FAILED.\n");
-        GLint len;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
-        printf("    Log length: %d\n", len);
-        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
-        glGetProgramInfoLog(program, len, NULL, CompileLog);
-        printf("    Error messages:\n%s\n", CompileLog);
-        free(CompileLog);
-    }
-    else
-        printf("    Program linking successful.\n");
 }
 
 int btns = 0;
@@ -442,78 +532,13 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     glGetShaderiv = (PFNGLGETSHADERIVPROC) wglGetProcAddress("glGetShaderiv");
     glGetShaderInfoLog = (PFNGLGETSHADERINFOLOGPROC) wglGetProcAddress("glGetShaderInfoLog");
     glGetProgramInfoLog = (PFNGLGETPROGRAMINFOLOGPROC) wglGetProcAddress("glGetProgramInfoLog");
+    glDeleteShader = (PFNGLDELETESHADERPROC) wglGetProcAddress("glDeleteShader");
+    glDetachShader = (PFNGLDETACHSHADERPROC) wglGetProcAddress("glDetachShader");
+    glDeleteProgram = (PFNGLDELETEPROGRAMPROC) wglGetProcAddress("glDeleteProgram");
     
     ShowCursor(FALSE);
     
-    // Browse shaders folder for shaders
-    WIN32_FIND_DATA data;
-    HANDLE hfile = FindFirstFile(".\\shaders\\*.frag", &data);
-    char **filenames = (char **)malloc(sizeof(char*));
-    filenames[0] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
-    sprintf(filenames[0], ".\\shaders\\%s", data.cFileName);
-    printf("Found %s\n", filenames[0]);
-    nfiles = 1;
-    while(FindNextFile(hfile, &data))
-    {
-        ++nfiles;
-        filenames = (char**)realloc(filenames, nfiles*sizeof(char*));
-        filenames[nfiles-1] = (char*)malloc(strlen(data.cFileName)+2+strlen(".\\shaders\\"));
-        sprintf(filenames[nfiles-1], ".\\shaders\\%s", data.cFileName);
-        printf("Found %s\n", filenames[nfiles-1]);
-    } 
-    FindClose(hfile);
-    printf("Read %d files.\n", nfiles);
-    
-    // Load shaders
-    handles = (int*)malloc(nfiles*sizeof(int));
-    programs = (int*)malloc(nfiles*sizeof(int));
-    time_locations = (int*)malloc(nfiles*sizeof(int));
-    resolution_locations = (int*)malloc(nfiles*sizeof(int));
-    fader0_locations = (int*)malloc(nfiles*sizeof(int));
-    fader1_locations = (int*)malloc(nfiles*sizeof(int));
-    fader2_locations = (int*)malloc(nfiles*sizeof(int));
-    fader3_locations = (int*)malloc(nfiles*sizeof(int));
-    fader4_locations = (int*)malloc(nfiles*sizeof(int));
-    fader5_locations = (int*)malloc(nfiles*sizeof(int));
-    fader6_locations = (int*)malloc(nfiles*sizeof(int));
-    fader7_locations = (int*)malloc(nfiles*sizeof(int));
-    fader8_locations = (int*)malloc(nfiles*sizeof(int));
-    
-    for(int i=0; i<nfiles; ++i)
-    {
-        printf("Loading Shader %d\n", i);
-        
-        FILE *f = fopen(filenames[i], "rt");
-        if(f == 0)printf("Failed to open file: %s\n", filenames[i]);
-        fseek(f, 0, SEEK_END);
-        int filesize = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        char *source = (char*)malloc(filesize+2);
-        fread(source, 1, filesize, f);
-        fclose(f);
-        
-        handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
-        programs[i] = glCreateProgram();
-        glShaderSource(handles[i], 1, (GLchar **)&source, &filesize);
-        glCompileShader(handles[i]);
-        debug(handles[i]);
-        glAttachShader(programs[i], handles[i]);
-        glLinkProgram(programs[i]);
-        debugp(programs[i]);
-        
-        glUseProgram(programs[i]);
-        time_locations[i] = glGetUniformLocation(programs[i], "iTime");
-        resolution_locations[i] = glGetUniformLocation(programs[i], "iResolution");
-        fader0_locations[i] = glGetUniformLocation(programs[i], "iFader0");
-        fader1_locations[i] = glGetUniformLocation(programs[i], "iFader1");
-        fader2_locations[i] = glGetUniformLocation(programs[i], "iFader2");
-        fader3_locations[i] = glGetUniformLocation(programs[i], "iFader3");
-        fader4_locations[i] = glGetUniformLocation(programs[i], "iFader4");
-        fader5_locations[i] = glGetUniformLocation(programs[i], "iFader5");
-        fader6_locations[i] = glGetUniformLocation(programs[i], "iFader6");
-        fader7_locations[i] = glGetUniformLocation(programs[i], "iFader7");
-        fader8_locations[i] = glGetUniformLocation(programs[i], "iFader8");
-    }
+    ReloadShaders();
     
     UINT nMidiDeviceNum;
     MIDIINCAPS caps;
@@ -620,6 +645,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         glEnd();
         
         SwapBuffers(hdc);
+        
+        if(dirty) ReloadShaders();
     }
     
     return 0;
