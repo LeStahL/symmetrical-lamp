@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "Windows.h"
 #include "GL/GL.h"
@@ -26,6 +27,8 @@
 HMIDIOUT hMidiOut;
 HWND hwnd;
 HDC hdc;
+const int w = 1920,
+h = 1080;
 int override_index = 0,
 nfiles,
 *handles = 0,
@@ -43,7 +46,8 @@ nfiles,
 *fader8_locations = 0, 
 index = 0,
 dt_interval = 0,
-dirty = 0;
+dirty = 0,
+shot = 0;
 char **shader_sources = 0;
 
 double t_now = 0.,
@@ -115,6 +119,63 @@ void debugp(int program)
     }
     else
         printf("    Program linking successful.\n");
+}
+
+
+
+int screenshot(char *fileName)
+{    
+    static unsigned char header[54] = {
+    0x42, 0x4D, 0x36, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0xC4, 0x0E, 0x00, 0x00, 0xC4, 0x0E, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    unsigned char *pixels = (unsigned char *) malloc(w * h * 3);
+    ((unsigned __int16 *) header)[ 9] = w;
+    ((unsigned __int16 *) header)[11] = h;
+
+    glReadPixels(0,0,w,h,GL_RGB,GL_UNSIGNED_BYTE,pixels);
+
+    unsigned char temp;
+    for (unsigned int i = 0; i < w * h * 3; i += 3)
+    {
+        temp = pixels[i];
+        pixels[i] = pixels[i + 2];
+        pixels[i + 2] = temp;
+    }
+
+    HANDLE FileHandle;
+    unsigned long Size;
+
+    if (fileName == NULL)
+    {
+        char file[256];
+        do 
+        {
+            char buf[100];
+            SYSTEMTIME st;
+            GetLocalTime(&st);
+            sprintf(buf, "%.4u-%.2u-%.2u_%.2u-%.2u-%.2u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+//             printf("buf: %s\n", buf);
+            sprintf(file,"Screenshot%s.bmp",buf);
+//             printf("file: %s\n", file);
+            FileHandle = CreateFile(file,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
+        } while (FileHandle == INVALID_HANDLE_VALUE);
+    } 
+    else 
+    {
+        FileHandle = CreateFile(fileName,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
+        if (FileHandle == INVALID_HANDLE_VALUE) return 0;
+    }
+
+    WriteFile(FileHandle,header,sizeof(header),&Size,NULL);
+    WriteFile(FileHandle,pixels,w * h * 3,&Size,NULL);
+
+    CloseHandle(FileHandle);
+
+    free(pixels);
+    return 1;
 }
 
 #define ACREA(id, type) \
@@ -351,7 +412,14 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
         BYTE channel = b4lo,
         button = b3;
         
-        if(b4hi == NOTE_OFF)
+        if(b4hi == NOTE_ON)
+        {
+            if(button == 0x5d) // Screenshot
+            {
+                shot = 1;
+            }
+        }
+        else if(b4hi == NOTE_OFF)
         {
             select_button(button);
             
@@ -414,6 +482,10 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
             else if(button >= 0x52 && button <= 0x56)
             {
                 printf("dt_interval: %d\n", dt_interval);
+            }
+            else if(button == 0x5d) // Screenshot
+            {
+                shot = 1;
             }
         }
         else if(b4hi == CONTROL_CHANGE)// Channel select
@@ -479,12 +551,12 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     
     RegisterClassEx(&wc);
     
-    hwnd = CreateWindowEx(0, WindowClass, ":: Team210 :: GO - MAKE A DEMO ::", WS_POPUP | WS_VISIBLE, 0, 0, 1920, 1080, NULL, NULL, hInstance, 0);
+    hwnd = CreateWindowEx(0, WindowClass, ":: Team210 :: GO - MAKE A DEMO ::", WS_POPUP | WS_VISIBLE, 0, 0, w, h, NULL, NULL, hInstance, 0);
     
     DEVMODE dm = { 0 };
     dm.dmSize = sizeof(dm);
-    dm.dmPelsWidth = 1920;
-    dm.dmPelsHeight = 1080;
+    dm.dmPelsWidth = w;
+    dm.dmPelsHeight = h;
     dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
     
     ChangeDisplaySettings(&dm, CDS_FULLSCREEN);
@@ -628,7 +700,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         }
         
         glUseProgram(programs[index]);
-        glUniform2f(resolution_locations[index], 1920, 1080);
+        glUniform2f(resolution_locations[index], w, h);
         glUniform1f(time_locations[index], t_now);
         glUniform1f(fader0_locations[index], fader_values[0]);
         glUniform1f(fader1_locations[index], fader_values[1]);
@@ -640,7 +712,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         glUniform1f(fader7_locations[index], fader_values[7]);
         glUniform1f(fader8_locations[index], fader_values[8]);
         
-        glViewport(0,0,1920,1080);
+        glViewport(0,0,w,h);
         
         glBegin(GL_QUADS);
         glVertex3f(-1,-1,0);
@@ -655,6 +727,12 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         {
             ReloadShaders();
             dirty = 0;
+        }
+        
+        if(shot)
+        {
+             screenshot(NULL);
+             shot = 0;
         }
     }
     
