@@ -27,25 +27,25 @@ HMIDIOUT hMidiOut;
 HWND hwnd;
 HDC hdc;
 int override_index = 0,
-    nfiles,
-    *handles,
-    *programs,
-    *time_locations,
-    *resolution_locations,
-    *fader0_locations,
-    *fader1_locations,
-    *fader2_locations,
-    *fader3_locations,
-    *fader4_locations,
-    *fader5_locations,
-    *fader6_locations,
-    *fader7_locations,
-    *fader8_locations, 
-    index = 0,
-    dt_interval = 0;
+nfiles,
+*handles = 0,
+*programs = 0,
+*time_locations = 0,
+*resolution_locations = 0,
+*fader0_locations = 0,
+*fader1_locations = 0,
+*fader2_locations = 0,
+*fader3_locations = 0,
+*fader4_locations = 0,
+*fader5_locations = 0,
+*fader6_locations = 0,
+*fader7_locations = 0,
+*fader8_locations = 0, 
+index = 0,
+dt_interval = 0;
 
 double t_now = 0.,
-    fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
+fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
 
 PFNGLCREATESHADERPROC glCreateShader;
 PFNGLCREATEPROGRAMPROC glCreateProgram;
@@ -65,44 +65,142 @@ PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog;
 PFNGLGETPROGRAMIVPROC glGetProgramiv;
 PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog;
 
+DWORD dwWaitStatus, watch_directory_thread_id; 
+HANDLE dwChangeHandles[2],
+    watch_directory_thread; 
+TCHAR lpDrive[4];
+TCHAR lpFile[_MAX_FNAME];
+TCHAR lpExt[_MAX_EXT];
+
+void watch_directory(const char *lpDir)
+{
+    _splitpath_s(lpDir, lpDrive, 4, NULL, 0, lpFile, _MAX_FNAME, lpExt, _MAX_EXT);
+    
+    lpDrive[2] = (TCHAR)'\\';
+    lpDrive[3] = (TCHAR)'\0';
+    
+    dwChangeHandles[0] = FindFirstChangeNotification( 
+    lpDir,                         // directory to watch 
+    FALSE,                         // do not watch subtree 
+    FILE_NOTIFY_CHANGE_FILE_NAME); // watch file name changes 
+    
+    if (dwChangeHandles[0] == INVALID_HANDLE_VALUE) 
+    {
+        printf("\n ERROR: FindFirstChangeNotification function failed.\n");
+        ExitProcess(GetLastError()); 
+    }
+    
+    dwChangeHandles[1] = FindFirstChangeNotification( 
+    lpDir,                       // directory to watch 
+    TRUE,                          // watch the subtree 
+    FILE_NOTIFY_CHANGE_LAST_WRITE);  // watch last write changes
+    
+    if (dwChangeHandles[1] == INVALID_HANDLE_VALUE) 
+    {
+        printf("\n ERROR: FindFirstChangeNotification function failed.\n");
+        ExitProcess(GetLastError()); 
+    }
+
+    if ((dwChangeHandles[0] == NULL) || (dwChangeHandles[1] == NULL))
+    {
+        printf("\n ERROR: Unexpected NULL from FindFirstChangeNotification.\n");
+        ExitProcess(GetLastError()); 
+    }
+}
+
+void __stdcall  directory_watch_thread()
+{
+    while (TRUE) 
+    { 
+        printf("\nWaiting for notification...\n");
+        
+        dwWaitStatus = WaitForMultipleObjects(2, dwChangeHandles, 
+                                              FALSE, INFINITE); 
+        
+        switch (dwWaitStatus) 
+        { 
+            case WAIT_OBJECT_0: 
+                
+                // A file was created, renamed, or deleted in the directory.
+                // Refresh this directory and restart the notification.
+                printf("File created/renamed/deleted\n");
+                
+                if ( FindNextChangeNotification(dwChangeHandles[0]) == FALSE )
+                {
+                    printf("\n ERROR: FindNextChangeNotification function failed.\n");
+                    ExitProcess(GetLastError()); 
+                }
+                break; 
+                
+            case WAIT_OBJECT_0 + 1: 
+                
+                // A directory was created, renamed, or deleted.
+                // Refresh the tree and restart the notification.
+                printf("File was touched.\n");
+                
+                if (FindNextChangeNotification(dwChangeHandles[1]) == FALSE )
+                {
+                    printf("\n ERROR: FindNextChangeNotification function failed.\n");
+                    ExitProcess(GetLastError()); 
+                }
+                break; 
+                
+            case WAIT_TIMEOUT:
+                
+                // A timeout occurred, this would happen if some value other 
+                // than INFINITE is used in the Wait call and no changes occur.
+                // In a single-threaded environment you might not want an
+                // INFINITE wait.
+                
+                printf("\nNo changes in the timeout period.\n");
+                break;
+                
+            default: 
+                printf("\n ERROR: Unhandled dwWaitStatus.\n");
+                ExitProcess(GetLastError());
+                break;
+        }
+    }
+}
+
 void debug(int shader_handle)
 {
-	printf("    Debugging shader with handle %d.\n", shader_handle);
-	int compile_status = 0;
-	glGetShaderiv(shader_handle, GL_COMPILE_STATUS, &compile_status);
-	if(compile_status != GL_TRUE)
-	{
-		printf("    FAILED.\n");
-		GLint len;
-		glGetShaderiv(shader_handle, GL_INFO_LOG_LENGTH, &len);
-		printf("    Log length: %d\n", len);
-		GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
-		glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
-		printf("    Error messages:\n%s\n", CompileLog);
-		free(CompileLog);
-	}
-	else
-		printf("    Shader compilation successful.\n");
+    printf("    Debugging shader with handle %d.\n", shader_handle);
+    int compile_status = 0;
+    glGetShaderiv(shader_handle, GL_COMPILE_STATUS, &compile_status);
+    if(compile_status != GL_TRUE)
+    {
+        printf("    FAILED.\n");
+        GLint len;
+        glGetShaderiv(shader_handle, GL_INFO_LOG_LENGTH, &len);
+        printf("    Log length: %d\n", len);
+        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
+        glGetShaderInfoLog(shader_handle, len, NULL, CompileLog);
+        printf("    Error messages:\n%s\n", CompileLog);
+        free(CompileLog);
+    }
+    else
+        printf("    Shader compilation successful.\n");
 }
 
 void debugp(int program)
 {
-	printf("    Debugging program with handle %d.\n", program);
-	int compile_status = 0;
-	glGetProgramiv(program, GL_LINK_STATUS, &compile_status);
-	if(compile_status != GL_TRUE)
-	{
-		printf("    FAILED.\n");
-		GLint len;
-		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
-		printf("    Log length: %d\n", len);
-		GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
-		glGetProgramInfoLog(program, len, NULL, CompileLog);
-		printf("    Error messages:\n%s\n", CompileLog);
-		free(CompileLog);
-	}
-	else
-		printf("    Program linking successful.\n");
+    printf("    Debugging program with handle %d.\n", program);
+    int compile_status = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &compile_status);
+    if(compile_status != GL_TRUE)
+    {
+        printf("    FAILED.\n");
+        GLint len;
+        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &len);
+        printf("    Log length: %d\n", len);
+        GLchar *CompileLog = (GLchar*)malloc(len*sizeof(GLchar));
+        glGetProgramInfoLog(program, len, NULL, CompileLog);
+        printf("    Error messages:\n%s\n", CompileLog);
+        free(CompileLog);
+    }
+    else
+        printf("    Program linking successful.\n");
 }
 
 int btns = 0;
@@ -124,7 +222,7 @@ void select_button(int _index)
     else 
     {
         dt_interval = (_index - 0x52) % 5;
-    
+        
         for(int i=dt_interval; i<5; ++i)
         {
             DWORD out_msg = 0x9 << 4 | (0x52 + i) << 8 | 67 << 16;
@@ -147,16 +245,16 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
     if(wMsg == MIM_DATA)
     {
         BYTE b1 = (dwParam1 >> 24) & 0xFF,
-            b2 = (dwParam1 >> 16) & 0xFF,
-            b3 = (dwParam1 >> 8) & 0xFF,
-            b4 = dwParam1 & 0xFF;
+        b2 = (dwParam1 >> 16) & 0xFF,
+        b3 = (dwParam1 >> 8) & 0xFF,
+        b4 = dwParam1 & 0xFF;
         BYTE b3lo = b3 & 0xF,
-            b3hi = (b3 >> 4) & 0xF,
-            b4lo = b4 & 0xF,
-            b4hi = (b4 >> 4) & 0xF;
+        b3hi = (b3 >> 4) & 0xF,
+        b4lo = b4 & 0xF,
+        b4hi = (b4 >> 4) & 0xF;
         
         BYTE channel = b4lo,
-            button = b3;
+        button = b3;
         
         if(b4hi == NOTE_OFF)
         {
@@ -173,7 +271,7 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
                     0,  0,  1,  1,  1,  0,  0,  1,
                     1,  1,  12, 1,  12, 1,  1,  12
                 };
-
+                
                 for(int i=0; i<40; ++i)
                 {
                     
@@ -201,7 +299,7 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
                     0,3,0,0,0,0,1,0,
                     0,7,0,0,0,0,9,0
                 };
-
+                
                 for(int i=0; i<40; ++i)
                 {
                     
@@ -227,7 +325,6 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
         {
             if(button == TIME_DIAL)
             {
-                
                 if(b2 < 0x3A)
                 {
                     if(dt_interval == 0)t_now += 1.e-3;
@@ -269,23 +366,23 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     freopen("CONOUT$", "w", stderr);
     
     // Display demo window
-	CHAR WindowClass[]  = "Team210 Demo Window";
-
-	WNDCLASSEX wc = { 0 };
-	wc.cbSize = sizeof(wc);
-	wc.style = CS_OWNDC | CS_VREDRAW | CS_HREDRAW;
-	wc.lpfnWndProc = &DefWindowProc;
-	wc.cbClsExtra = 0;
-	wc.cbWndExtra = 0;
-	wc.hInstance = hInstance;
-	wc.hIcon = LoadIcon(NULL, IDI_WINLOGO);
-	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wc.hbrBackground = NULL;
-	wc.lpszMenuName = NULL;
-	wc.lpszClassName = WindowClass;
-	wc.hIconSm = NULL;
-
-	RegisterClassEx(&wc);
+    CHAR WindowClass[]  = "Team210 Demo Window";
+    
+    WNDCLASSEX wc = { 0 };
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_OWNDC | CS_VREDRAW | CS_HREDRAW;
+    wc.lpfnWndProc = &DefWindowProc;
+    wc.cbClsExtra = 0;
+    wc.cbWndExtra = 0;
+    wc.hInstance = hInstance;
+    wc.hIcon = LoadIcon(NULL, IDI_WINLOGO);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = NULL;
+    wc.lpszMenuName = NULL;
+    wc.lpszClassName = WindowClass;
+    wc.hIconSm = NULL;
+    
+    RegisterClassEx(&wc);
     
     hwnd = CreateWindowEx(0, WindowClass, ":: Team210 :: GO - MAKE A DEMO ::", WS_POPUP | WS_VISIBLE, 0, 0, 1920, 1080, NULL, NULL, hInstance, 0);
     
@@ -298,43 +395,43 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     ChangeDisplaySettings(&dm, CDS_FULLSCREEN);
     
     ShowWindow(hwnd, TRUE);
-	UpdateWindow(hwnd);
+    UpdateWindow(hwnd);
     
     PIXELFORMATDESCRIPTOR pfd =
-	{
-		sizeof(PIXELFORMATDESCRIPTOR),
-		1,
-		PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
-		PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
-		32,                   // Colordepth of the framebuffer.
-		0, 0, 0, 0, 0, 0,
-		0,
-		0,
-		0,
-		0, 0, 0, 0,
-		24,                   // Number of bits for the depthbuffer
-		8,                    // Number of bits for the stencilbuffer
-		0,                    // Number of Aux buffers in the framebuffer.
-		PFD_MAIN_PLANE,
-		0,
-		0, 0, 0
-	};
-
-	hdc = GetDC(hwnd);
-
-	int  pf = ChoosePixelFormat(hdc, &pfd);
-	SetPixelFormat(hdc, pf, &pfd);
-
-	HGLRC glrc = wglCreateContext(hdc);
-	wglMakeCurrent(hdc, glrc);
+    {
+        sizeof(PIXELFORMATDESCRIPTOR),
+        1,
+        PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    //Flags
+        PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
+        32,                   // Colordepth of the framebuffer.
+        0, 0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0, 0, 0, 0,
+        24,                   // Number of bits for the depthbuffer
+        8,                    // Number of bits for the stencilbuffer
+        0,                    // Number of Aux buffers in the framebuffer.
+        PFD_MAIN_PLANE,
+        0,
+        0, 0, 0
+    };
+    
+    hdc = GetDC(hwnd);
+    
+    int  pf = ChoosePixelFormat(hdc, &pfd);
+    SetPixelFormat(hdc, pf, &pfd);
+    
+    HGLRC glrc = wglCreateContext(hdc);
+    wglMakeCurrent(hdc, glrc);
     
     glCreateShader = (PFNGLCREATESHADERPROC) wglGetProcAddress("glCreateShader");
-	glCreateProgram = (PFNGLCREATEPROGRAMPROC) wglGetProcAddress("glCreateProgram");
-	glShaderSource = (PFNGLSHADERSOURCEPROC) wglGetProcAddress("glShaderSource");
-	glCompileShader = (PFNGLCOMPILESHADERPROC) wglGetProcAddress("glCompileShader");
-	glAttachShader = (PFNGLATTACHSHADERPROC) wglGetProcAddress("glAttachShader");
-	glLinkProgram = (PFNGLLINKPROGRAMPROC) wglGetProcAddress("glLinkProgram");
-	glUseProgram = (PFNGLUSEPROGRAMPROC) wglGetProcAddress("glUseProgram");
+    glCreateProgram = (PFNGLCREATEPROGRAMPROC) wglGetProcAddress("glCreateProgram");
+    glShaderSource = (PFNGLSHADERSOURCEPROC) wglGetProcAddress("glShaderSource");
+    glCompileShader = (PFNGLCOMPILESHADERPROC) wglGetProcAddress("glCompileShader");
+    glAttachShader = (PFNGLATTACHSHADERPROC) wglGetProcAddress("glAttachShader");
+    glLinkProgram = (PFNGLLINKPROGRAMPROC) wglGetProcAddress("glLinkProgram");
+    glUseProgram = (PFNGLUSEPROGRAMPROC) wglGetProcAddress("glUseProgram");
     glGetUniformLocation = (PFNGLGETUNIFORMLOCATIONPROC) wglGetProcAddress("glGetUniformLocation");
     glUniform1f = (PFNGLUNIFORM1FPROC) wglGetProcAddress("glUniform1f");
     glUniform2f = (PFNGLUNIFORM2FPROC) wglGetProcAddress("glUniform2f");
@@ -381,7 +478,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     fader6_locations = (int*)malloc(nfiles*sizeof(int));
     fader7_locations = (int*)malloc(nfiles*sizeof(int));
     fader8_locations = (int*)malloc(nfiles*sizeof(int));
-
+    
     for(int i=0; i<nfiles; ++i)
     {
         printf("Loading Shader %d\n", i);
@@ -421,8 +518,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     UINT nMidiDeviceNum;
     MIDIINCAPS caps;
     
-	nMidiDeviceNum = midiInGetNumDevs();
-	if(nMidiDeviceNum == 0) 
+    nMidiDeviceNum = midiInGetNumDevs();
+    if(nMidiDeviceNum == 0) 
     {
         printf("No MIDI input devices connected.\n");
     }
@@ -451,7 +548,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     
     MIDIOUTCAPS ocaps;
     nMidiDeviceNum = midiOutGetNumDevs();
-
+    
     if(nMidiDeviceNum == 0) 
     {
         printf("No MIDI output devices connected.\n");
@@ -476,6 +573,14 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     }
     
     select_button(0);
+    
+    watch_directory(".\\shaders");
+    watch_directory_thread = CreateThread(NULL, // security attributes ( default if NULL )
+                            0, // stack SIZE default if 0
+                            directory_watch_thread, // Start Address
+                            NULL, // input data
+                            0, // creational flag ( start if  0 )
+                            &watch_directory_thread_id); // thread ID
     
     while(1)
     {
@@ -506,7 +611,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         glUniform1f(fader8_locations[index], fader_values[8]);
         
         glViewport(0,0,1920,1080);
-            
+        
         glBegin(GL_QUADS);
         glVertex3f(-1,-1,0);
         glVertex3f(-1,1,0);
