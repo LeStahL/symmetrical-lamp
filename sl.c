@@ -54,6 +54,8 @@ shot = 0;
 char **shader_sources = 0;
 GLchar **compile_logs = 0,
 **link_logs = 0;
+GLuint first_pass_framebuffer = 0, first_pass_texture;
+int post_handle, post_program, post_iResolution_location, post_iChannel0_location;
 
 double t_now = 0.,
 fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
@@ -78,6 +80,8 @@ PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog;
 PFNGLDELETESHADERPROC glDeleteShader;
 PFNGLDELETEPROGRAMPROC glDeleteProgram;
 PFNGLDETACHSHADERPROC glDetachShader;
+PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D;
+PFNGLACTIVETEXTUREPROC glActiveTexture;
 
 DWORD dwWaitStatus, watch_directory_thread_id; 
 HANDLE dwChangeHandles[2],
@@ -624,6 +628,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     glDeleteShader = (PFNGLDELETESHADERPROC) wglGetProcAddress("glDeleteShader");
     glDetachShader = (PFNGLDETACHSHADERPROC) wglGetProcAddress("glDetachShader");
     glDeleteProgram = (PFNGLDELETEPROGRAMPROC) wglGetProcAddress("glDeleteProgram");
+    glFramebufferTexture2D = (PFNGLFRAMEBUFFERTEXTURE2DPROC) wglGetProcAddress("glFramebufferTexture2D");
+    glActiveTexture = (PFNGLACTIVETEXTUREPROC) wglGetProcAddress("glActiveTexture");
     
     ShowCursor(FALSE);
     
@@ -696,6 +702,47 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     
     wglUseFontBitmaps(hdc, 0, 256, 1000);
     
+    // Create framebuffer for rendering first pass to
+	glGenFramebuffers(1, &first_pass_framebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, first_pass_framebuffer);
+	glGenTextures(1, &first_pass_texture);
+	glBindTexture(GL_TEXTURE_2D, first_pass_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, first_pass_texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    
+    // Load post processing shader
+    const char *post_source = "#version 130\n;"
+"uniform vec2 iResolution;"
+"uniform sampler2D iChannel0;"
+"const float fsaa = 144.;"
+"void main()"
+"{"
+"    vec3 col = vec3(0.);"
+"    float bound = sqrt(fsaa)-1.;"
+"   	for(float i = -.5*bound; i<=.5*bound; i+=1.)"
+"        for(float j=-.5*bound; j<=.5*bound; j+=1.)"
+"        {"
+"     		col += texture(iChannel0, gl_FragCoord.xy/iResolution.xy+vec2(i,j)*mix(3.,20.,2.*abs(gl_FragCoord.y/iResolution.y-.5))*exp(-abs(1.e-2*length(gl_FragCoord.xy)/iResolution.y-.5))/max(bound, 1.)/iResolution.xy).xyz;"
+"        }"
+"    col /= fsaa;"
+"    gl_FragColor = vec4(col,1.0);"
+"}";
+    int post_size = strlen(post_source);
+    post_handle = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(post_handle, 1, (GLchar **)&post_source, &post_size);
+    glCompileShader(post_handle);
+    post_program = glCreateProgram();
+    glAttachShader(post_program,post_handle);
+    glLinkProgram(post_program);
+    glUseProgram(post_program);
+    post_iResolution_location = glGetUniformLocation(post_program, "iResolution");
+    post_iChannel0_location = glGetUniformLocation(post_program, "iChannel0");
+    
     while(1)
     {
         MSG msg = { 0 };
@@ -710,6 +757,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
             TranslateMessage( &msg );
             DispatchMessageA( &msg );
         }
+        
+        glBindFramebuffer(GL_FRAMEBUFFER, first_pass_framebuffer);
         
         glUseProgram(programs[index]);
         glUniform2f(resolution_locations[index], w, h);
@@ -732,6 +781,26 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         glVertex3f(1,1,0);
         glVertex3f(1,-1,0);
         glEnd();
+        
+        glFlush();
+        
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glUseProgram(post_program);
+        glUniform2f(post_iResolution_location, w, h);
+        glUniform1i(post_iChannel0_location, 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, first_pass_texture);
+        
+        glViewport(0,0,w,h);
+        
+        glBegin(GL_QUADS);
+        glVertex3f(-1,-1,0);
+        glVertex3f(-1,1,0);
+        glVertex3f(1,1,0);
+        glVertex3f(1,-1,0);
+        glEnd();
+        
+        glFlush();
         
         if(dirty) 
         {
