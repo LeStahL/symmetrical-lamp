@@ -250,13 +250,12 @@ void ReloadShaders()
         FILE *f = fopen(filenames[i], "rt");
         if(f == 0)printf("Failed to open file: %s\n", filenames[i]);
         fseek(f, 0, SEEK_END);
-        size_t filesize = ftell(f);
+        long filesize = ftell(f);
         fseek(f, 0, SEEK_SET);
-        shader_sources[i] = (char*)malloc(filesize+2);
+        shader_sources[i] = (char*)malloc(filesize+1);
         fread(shader_sources[i], 1, filesize, f);
         fclose(f);
         shader_sources[i][filesize] = 0;
-        ++filesize;
         printf("%s\n\n==============\n", shader_sources[i]);
         
         handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
