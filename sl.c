@@ -202,6 +202,7 @@ void ReloadShaders()
         glDeleteShader(handles[i]);
         glDeleteProgram(programs[i]);
         free(shader_sources[i]);
+        shader_sources[i] = 0;
     }
     
     // Browse shaders folder for shaders
@@ -256,7 +257,7 @@ void ReloadShaders()
         fread(shader_sources[i], 1, filesize, f);
         fclose(f);
         shader_sources[i][filesize] = 0;
-        printf("%s\n\n==============\n", shader_sources[i]);
+        printf("%d\n\n%s\n\n==============\n", strlen(shader_sources[i]), shader_sources[i]);
         
         handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
         programs[i] = glCreateProgram();
@@ -454,7 +455,6 @@ void CALLBACK MidiInProc_apc40mk2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, 
                 
                 for(int i=0; i<40; ++i)
                 {
-                    
                     DWORD out_msg;
                     if(data[i] == 0) 
                     {
