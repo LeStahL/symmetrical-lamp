@@ -257,7 +257,7 @@ void ReloadShaders()
         fread(shader_sources[i], 1, filesize, f);
         fclose(f);
         shader_sources[i][filesize] = 0;
-        printf("%d\n\n%s\n\n==============\n", strlen(shader_sources[i]), shader_sources[i]);
+//         printf("%d\n\n%s\n\n==============\n", strlen(shader_sources[i]), shader_sources[i]);
         
         handles[i] = glCreateShader(GL_FRAGMENT_SHADER);
         programs[i] = glCreateProgram();
