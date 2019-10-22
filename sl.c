@@ -696,8 +696,8 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     select_button(0);
     glListBase(1000); 
     
-    watch_directory(".\\shaders");
-    watch_directory_thread = CreateThread(NULL, 0, directory_watch_thread, NULL, 0, &watch_directory_thread_id);
+//     watch_directory(".\\shaders");
+//     watch_directory_thread = CreateThread(NULL, 0, directory_watch_thread, NULL, 0, &watch_directory_thread_id);
     
     SelectObject (hdc, GetStockObject (SYSTEM_FONT)); 
     
@@ -749,11 +749,24 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         MSG msg = { 0 };
         while ( PeekMessageA( &msg, NULL, 0, 0, PM_REMOVE ) )
         {
-            if ( msg.message == WM_QUIT || (msg.message = WM_KEYDOWN && msg.wParam == VK_ESCAPE ) )
+            if ( msg.message == WM_KEYDOWN  )
+            {
+                if(msg.wParam == VK_F5)
+                {
+                    ReloadShaders();
+                }
+                else if(msg.wParam == VK_ESCAPE)
+                {
+                    ExitProcess(0);
+                    return 0;
+                }
+            }
+            else if ( msg.message == WM_QUIT )
             {
                 ExitProcess(0);
                 return 0;
             }
+            
             
             TranslateMessage( &msg );
             DispatchMessageA( &msg );
@@ -803,11 +816,11 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
         
         glFlush();
         
-        if(dirty) 
-        {
-            ReloadShaders();
-            dirty = 0;
-        }
+//         if(dirty) 
+//         {
+//             ReloadShaders();
+//             dirty = 0;
+//         }
 
         if(!shader_compiled[index])
         {
