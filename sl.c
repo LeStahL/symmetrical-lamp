@@ -58,7 +58,8 @@ GLuint first_pass_framebuffer = 0, first_pass_texture;
 int post_handle, post_program, post_iResolution_location, post_iChannel0_location;
 
 double t_now = 0.,
-fader_values[] = { 1.,0.,0.,0.,0.,0.,0.,0.,0.};
+fader_values[] = { 0.,0.,0.,0.,0.,0.,0.,0.,0.},
+dial_values[] = { 0.,0.,0.,0.,0.,0.,0.,0.,0. };
 
 PFNGLCREATESHADERPROC glCreateShader;
 PFNGLCREATEPROGRAMPROC glCreateProgram;
@@ -410,6 +411,48 @@ void select_button(int _index)
     }
 }
 
+void CALLBACK MidiInProc_nanoKONTROL2(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, DWORD dwParam1, DWORD dwParam2)
+{
+    if(wMsg == MIM_DATA)
+    {
+        BYTE b1 = (dwParam1 >> 24) & 0xFF,
+            b2 = (dwParam1 >> 16) & 0xFF,
+            b3 = (dwParam1 >> 8) & 0xFF,
+            b4 = dwParam1 & 0xFF;
+        BYTE b3lo = b3 & 0xF,
+            b3hi = (b3 >> 4) & 0xF,
+            b4lo = b4 & 0xF,
+            b4hi = (b4 >> 4) & 0xF;
+        
+        BYTE channel = b4lo,
+            button = b3;
+        
+        printf("KORG nanoKONTROL2: wMsg=MIM_DATA, dwParam1=%08x, byte=%02x %02x h_%01x l_%01x %02x, dwParam2=%08x\n", dwParam1, b1, b2, b3hi, b3lo, b4, dwParam2);
+        
+        if(b4 == 0xb0) // Fader or dial
+        {
+            if(b3hi == 0) // Fader
+                fader_values[b3lo] = (double)b2/(double)0x7f;
+            else if(b3hi == 1) // Dial
+                dial_values[b3lo] = (double)b2/(double)0x7f;
+            else if(b3hi == 4 | b3hi == 3 || b3hi == 2)
+            {
+                printf("button\n");
+                if(b1 == 0x0)
+                {
+                    select_button((b3hi-2)*8+b3lo);
+                    printf("button off, index: %d\n", (b3hi-2)*8+b3lo);
+                }
+            }
+        }
+    }
+    
+    UpdateWindow(hwnd);
+    
+    return;
+}
+
+
 #define NOTE_OFF 0x8
 #define NOTE_ON 0x9
 #define CONTROL_CHANGE 0xB
@@ -639,14 +682,14 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
     UINT nMidiDeviceNum;
     MIDIINCAPS caps;
     
-    nMidiDeviceNum = midiInGetNumDevs();
-    if(nMidiDeviceNum == 0) 
+	nMidiDeviceNum = midiInGetNumDevs();
+	if(nMidiDeviceNum == 0) 
     {
         printf("No MIDI input devices connected.\n");
     }
     else
     {
-        printf("Available MIDI input devices:\n");
+        printf("Available MIDI devices:\n");
         for (unsigned int i = 0; i < nMidiDeviceNum; ++i) 
         {
             midiInGetDevCaps(i, &caps, sizeof(MIDIINCAPS));
@@ -659,6 +702,15 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
                 midiInStart(hMidiDevice);
                 
                 printf(" >> opened.\n");
+            }
+            else if(!strcmp("nanoKONTROL2", caps.szPname))
+            {
+                HMIDIIN hMidiDevice;
+                MMRESULT rv = midiInOpen(&hMidiDevice, i, (DWORD)(void*)MidiInProc_nanoKONTROL2, 0, CALLBACK_FUNCTION);
+                midiInStart(hMidiDevice);
+                
+                printf(" >> opened.\n");
+
             }
             else
             {
@@ -728,7 +780,7 @@ int WINAPI demo(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, in
 "   	for(float i = -.5*bound; i<=.5*bound; i+=1.)"
 "        for(float j=-.5*bound; j<=.5*bound; j+=1.)"
 "        {"
-"     		col += texture(iChannel0, gl_FragCoord.xy/iResolution.xy+vec2(i,j)*mix(3.,20.,2.*abs(gl_FragCoord.y/iResolution.y-.5))*exp(-abs(1.e-2*length(gl_FragCoord.xy)/iResolution.y-.5))/max(bound, 1.)/iResolution.xy).xyz;"
+"     		col += texture(iChannel0, gl_FragCoord.xy/iResolution.xy+vec2(i,j)*3./max(bound, 1.)/iResolution.xy).xyz;"
 "        }"
 "    col /= fsaa;"
 "    gl_FragColor = vec4(col,1.0);"
