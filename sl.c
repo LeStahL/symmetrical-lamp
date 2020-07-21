@@ -249,7 +249,7 @@ void ReloadShaders()
     {
         printf("Loading Shader %d from %s\n", i, filenames[i]);
         
-        FILE *f = fopen(filenames[i], "rt");
+        FILE *f = fopen(filenames[i], "rb");
         if(f == 0)printf("Failed to open file: %s\n", filenames[i]);
         fseek(f, 0, SEEK_END);
         long filesize = ftell(f);
