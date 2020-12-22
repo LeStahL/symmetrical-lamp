@@ -55,12 +55,13 @@ set(SYMMETRICAL_LAMP_SOURCES
 
     MainWindow.ui
     MainWindow.cpp
+
+    OpenGLWidget.cpp
 )
 add_executable(symmetrical-lamp ${SYMMETRICAL_LAMP_SOURCES})
 target_link_libraries(symmetrical-lamp Qt::Core Qt::Gui Qt::Widgets)
 
 if(TARGET Qt5::windeployqt)
-    # execute windeployqt in a tmp directory after build
     add_custom_command(TARGET symmetrical-lamp
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/windeployqt"
