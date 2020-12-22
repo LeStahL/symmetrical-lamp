@@ -1,0 +1,3 @@
+[submodule "thirdparty/libapc40mk2-qt"]
+	path = thirdparty/libapc40mk2-qt
+	url = https://github.com/LeStahL/libapc40mk2-qt

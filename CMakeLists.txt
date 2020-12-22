@@ -18,28 +18,53 @@
 cmake_minimum_required(VERSION 3.12)
 
 project(symmetrical-lamp)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-# Find the right python interpreter version
-find_package(OpenGL REQUIRED COMPONENTS OpenGL)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOMOC ON)
 
-if(MSVC)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /ENTRY:demo /SUBSYSTEM:Windows  /OPT:REF  /OPT:ICF=10 /VERBOSE ")
+find_package(Qt5 COMPONENTS Core Widgets Gui)
+
+if(Qt5_FOUND AND WIN32 AND TARGET Qt5::qmake AND NOT TARGET Qt5::windeployqt)
+    get_target_property(_qt5_qmake_location Qt5::qmake IMPORTED_LOCATION)
+
+    execute_process(
+        COMMAND "${_qt5_qmake_location}" -query QT_INSTALL_PREFIX
+        RESULT_VARIABLE return_code
+        OUTPUT_VARIABLE qt5_install_prefix
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    set(imported_location "${qt5_install_prefix}/bin/windeployqt.exe")
+
+    if(EXISTS ${imported_location})
+        add_executable(Qt5::windeployqt IMPORTED)
+
+        set_target_properties(Qt5::windeployqt PROPERTIES
+            IMPORTED_LOCATION ${imported_location}
+        )
+    endif()
 endif()
 
-add_executable(symmetrical-lamp sl.c )
+add_subdirectory(thirdparty/libapc40mk2-qt)
 
-target_include_directories(symmetrical-lamp SYSTEM PRIVATE "${OPENGL_INCLUDE_DIR}")
+set(SYMMETRICAL_LAMP_SOURCES
+    symmetricalLamp.cpp
 
-target_link_libraries(symmetrical-lamp OpenGL::GL)
+    MainWindow.ui
+    MainWindow.cpp
+)
+add_executable(symmetrical-lamp ${SYMMETRICAL_LAMP_SOURCES})
+target_link_libraries(symmetrical-lamp Qt::Core Qt::Gui Qt::Widgets)
 
-if(MSVC)
-    target_compile_options(symmetrical-lamp PRIVATE /Gy /O1 /fp:fast /GR- /GS- /MT )
-
-    if (MSVC_VERSION GREATER_EQUAL 1910) # VS2017
-        target_link_libraries(symmetrical-lamp Winmm.lib User32.lib ucrt.lib msvcrt.lib vcruntime.lib ucrt.lib Vfw32.lib)
-    else()
-        # for debug output: User32.lib ucrt.lib msvcrt.lib
-        target_link_libraries(symmetrical-lamp User32.lib Winmm.lib ucrt.lib msvcrt.lib)
-    endif()
+if(TARGET Qt5::windeployqt)
+    # execute windeployqt in a tmp directory after build
+    add_custom_command(TARGET symmetrical-lamp
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_CURRENT_BINARY_DIR}/windeployqt"
+        COMMAND set PATH=%PATH%$<SEMICOLON>${qt5_install_prefix}/bin
+        COMMAND Qt5::windeployqt "$<TARGET_FILE:symmetrical-lamp>"
+    )
 endif()
