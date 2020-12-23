@@ -21,6 +21,9 @@ project(symmetrical-lamp)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOMOC ON)
@@ -58,8 +61,9 @@ set(SYMMETRICAL_LAMP_SOURCES
 
     OpenGLWidget.cpp
 )
+include_directories(thirdparty/libapc40mk2-qt/src thirdparty/libapc40mk2-qt/thirdparty/QMidi/src)
 add_executable(symmetrical-lamp ${SYMMETRICAL_LAMP_SOURCES})
-target_link_libraries(symmetrical-lamp Qt::Core Qt::Gui Qt::Widgets)
+target_link_libraries(symmetrical-lamp Qt::Core Qt::Gui Qt::Widgets libapc40mk2-qt QMidi)
 
 if(TARGET Qt5::windeployqt)
     add_custom_command(TARGET symmetrical-lamp
